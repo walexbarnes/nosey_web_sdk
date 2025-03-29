@@ -35,6 +35,19 @@ function initializeUI() {
       pathsInput.value = targetPaths.join('\n');
     }
   });
+  
+  // Track tool_opn event when popup opens
+  if (window.Analytics) {
+    window.Analytics.trackToolOpen()
+      .then(success => {
+        if (success) {
+          console.log('Successfully tracked tool_opn event');
+        }
+      })
+      .catch(error => {
+        console.error('Error tracking tool_opn event:', error);
+      });
+  }
 }
 
 // Update the toggle button appearance based on listening state
@@ -85,6 +98,19 @@ function savePaths() {
     }, (response) => {
       if (response && response.status === 'success') {
         statusElement.textContent = `Saved ${targetPaths.length} path(s)`;
+        
+        // Track sniff_init event when save button is clicked
+        if (window.Analytics) {
+          window.Analytics.trackSniffInit(targetPaths)
+            .then(success => {
+              if (success) {
+                console.log('Successfully tracked sniff_init event');
+              }
+            })
+            .catch(error => {
+              console.error('Error tracking sniff_init event:', error);
+            });
+        }
       }
     });
   } else {

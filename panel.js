@@ -1,497 +1,566 @@
 // Panel script for Adobe Web SDK Inspector
 
-// DOM elements
-const toggleButton = document.getElementById('toggleButton');
-const pathsInput = document.getElementById('pathsInput');
-const saveButton = document.getElementById('saveButton');
-const statusElement = document.getElementById('status');
-const resultsContainer = document.getElementById('results');
-const debugToggle = document.getElementById('debugToggle') || createDebugToggle();
-const clearButton = document.getElementById('clearButton') || createClearButton();
-
-// Extension state
-let isListening = false;
-let targetPaths = [];
-let results = [];
-let debugMode = true;
-
-// Our forced default paths
-function getDefaultPaths() {
-  return [
-    'eventType',
-    'web.webPageDetails.URL',
-    'web.webInteraction.name',
-    'web.webInteraction.region'
-  ];
-}
-
-// EMERGENCY FIX: Forcefully clear storage and set our defaults
-(function forceDefaultPaths() {
-  // Our forced default paths
-  const forcedPaths = getDefaultPaths();
+/**
+ * DevTools panel module for the Adobe Web SDK Inspector
+ * Manages the panel UI and communication with the background script
+ */
+(function AdobeSDKInspectorPanel() {
+  // Configuration
+  const CONFIG = {
+    MAX_RESULTS: 20,
+    MAX_RECONNECT_ATTEMPTS: 5,
+    DEFAULT_EXTENSION_VERSION: '1.0.5'
+  };
   
-  // Clear all storage and set our defaults
-  chrome.storage.local.clear(() => {
-    // Set our defaults
-    chrome.storage.local.set({
-      targetPaths: forcedPaths,
-      extensionVersion: '1.0.2',
-      isListening: false,
-      debugMode: true
-    }, () => {
-      // Update the UI if pathsInput is available
-      if (pathsInput) {
-        targetPaths = forcedPaths;
-        pathsInput.value = forcedPaths.join('\n');
-      }
-      
-      // Notify background script
-      try {
-        chrome.runtime.sendMessage({
-          action: 'updatePaths',
-          paths: forcedPaths
-        });
-      } catch (e) {
-        console.error('Error notifying background of default paths', e);
-      }
-    });
-  });
-})();
-
-// Port for communication with background page
-let backgroundPort;
-let connectionAttempts = 0;
-const MAX_RECONNECT_ATTEMPTS = 5;
-
-// Create debug toggle if it doesn't exist
-function createDebugToggle() {
-  const controlsContainer = document.querySelector('.controls');
+  // State management
+  const state = {
+    isListening: false,
+    targetPaths: [],
+    debugMode: true,
+    connectionAttempts: 0,
+    backgroundPort: null
+  };
   
-  if (!controlsContainer) {
-    return null;
+  // DOM element references
+  const elements = {
+    toggleButton: document.getElementById('toggleButton'),
+    pathsInput: document.getElementById('pathsInput'),
+    saveButton: document.getElementById('saveButton'),
+    statusElement: document.getElementById('status'),
+    resultsContainer: document.getElementById('results')
+  };
+  
+  // Create optional controls
+  elements.debugToggle = document.getElementById('debugToggle') || createDebugToggle();
+  elements.clearButton = document.getElementById('clearButton') || createClearButton();
+  
+  /**
+   * Get the default target paths
+   * @returns {string[]} Array of default paths to extract
+   */
+  function getDefaultPaths() {
+    return [
+      'eventType',
+      'web.webPageDetails.URL',
+      'web.webInteraction.name',
+      'web.webInteraction.region'
+    ];
   }
   
-  const toggle = document.createElement('button');
-  toggle.id = 'debugToggle';
-  toggle.textContent = 'Debug: ON';
-  toggle.classList.add('active');
-  toggle.style.marginLeft = '10px';
-  
-  controlsContainer.appendChild(toggle);
-  
-  toggle.addEventListener('click', toggleDebugMode);
-  
-  return toggle;
-}
-
-// Create clear button if it doesn't exist
-function createClearButton() {
-  const saveButton = document.getElementById('saveButton');
-  
-  if (!saveButton) {
-    return null;
-  }
-  
-  const clearBtn = document.createElement('button');
-  clearBtn.id = 'clearButton';
-  clearBtn.textContent = 'Reset Defaults';
-  clearBtn.style.marginLeft = '10px';
-  
-  saveButton.parentNode.insertBefore(clearBtn, saveButton.nextSibling);
-  
-  clearBtn.addEventListener('click', resetPathsToDefaults);
-  
-  return clearBtn;
-}
-
-// Toggle debug mode
-function toggleDebugMode() {
-  debugMode = !debugMode;
-  
-  if (debugToggle) {
-    debugToggle.textContent = `Debug: ${debugMode ? 'ON' : 'OFF'}`;
-    if (debugMode) {
-      debugToggle.classList.add('active');
-    } else {
-      debugToggle.classList.remove('active');
-    }
-  }
-  
-  // Save state and notify background script
-  chrome.storage.local.set({ debugMode });
-  try {
-    chrome.runtime.sendMessage({ 
-      action: 'toggleDebug', 
-      value: debugMode 
-    }, (response) => {
-      if (response && response.status === 'success') {
-        updateStatus(`Debug mode ${debugMode ? 'enabled' : 'disabled'}`);
-      }
-    });
-  } catch (e) {
-    console.error('Error sending debug toggle message:', e);
-  }
-}
-
-// Initialize connection to background page
-function connectToBackgroundPage() {
-  try {
-    backgroundPort = chrome.runtime.connect({ name: 'devtools-panel' });
-    
-    backgroundPort.onMessage.addListener((message) => {
-      if (message.action === 'displayResults') {
-        addResult(message.results, message.url, message.requestInfo, message.fullXdm);
-      } else if (message.action === 'statusUpdate') {
-        updateStatus(message.status);
-      }
-    });
-    
-    // Send init message to let background know we're connected
-    try {
-      backgroundPort.postMessage({ action: 'devtools-init' });
-    } catch (e) {
-      console.error('Error sending init message via port:', e);
-    }
-    
-    // Reconnect if disconnected, with backoff
-    backgroundPort.onDisconnect.addListener(() => {
-      backgroundPort = null;
-      if (connectionAttempts < MAX_RECONNECT_ATTEMPTS) {
-        connectionAttempts++;
-        const delay = Math.pow(2, connectionAttempts) * 1000; // Exponential backoff
-        setTimeout(connectToBackgroundPage, delay);
-      } else {
-        updateStatus('Connection lost. Please refresh DevTools panel.');
-      }
-    });
-    
-    // Also send init message via runtime messaging as a backup
-    try {
-      chrome.runtime.sendMessage({ action: 'devtools-init' });
-    } catch (e) {
-      console.error('Error sending init via runtime:', e);
-    }
-    
-    // Reset connection attempts on successful connection
-    connectionAttempts = 0;
-  } catch (e) {
-    console.error('Error connecting to background page:', e);
-    updateStatus('Error connecting to background. Please refresh DevTools panel.');
-  }
-}
-
-// Initialize UI based on saved state
-function initializeUI() {
-  // Our forced default paths - we will ALWAYS use these
-  const forcedPaths = getDefaultPaths();
-
-  // Function to check if current path value contains any bad paths
+  /**
+   * Check if a string contains any bad paths
+   * @param {string} value - The string to check
+   * @returns {boolean} True if the string contains bad paths
+   */
   function containsBadPaths(value) {
     if (!value) return false;
     
     const badPrefixes = [
-      'timestamp'
+      'timestamp',
+      '_experience.analytics',
+      '_intelcorp',
+      'meta.state'
     ];
     
     return badPrefixes.some(prefix => value.includes(prefix));
   }
   
-  // Check if we need to update the path input (if it's empty or contains bad paths)
-  const currentValue = pathsInput.value;
-  const needsUpdate = !currentValue || containsBadPaths(currentValue);
-  
-  if (needsUpdate) {
-    // Set our paths in the UI
-    targetPaths = forcedPaths;
-    pathsInput.value = forcedPaths.join('\n');
+  /**
+   * Create debug toggle button if it doesn't exist
+   * @returns {HTMLElement|null} The created button or null
+   */
+  function createDebugToggle() {
+    const controlsContainer = document.querySelector('.controls');
+    if (!controlsContainer) return null;
     
-    // Save to storage
-    chrome.storage.local.set({ targetPaths: forcedPaths });
+    const toggle = document.createElement('button');
+    toggle.id = 'debugToggle';
+    toggle.textContent = 'Debug: ON';
+    toggle.classList.add('active');
+    toggle.style.marginLeft = '10px';
+    
+    controlsContainer.appendChild(toggle);
+    toggle.addEventListener('click', toggleDebugMode);
+    
+    return toggle;
   }
   
-  // Get only isListening and debugMode from storage
-  chrome.storage.local.get(['isListening', 'debugMode'], (result) => {
-    if (result.isListening !== undefined) {
-      isListening = result.isListening;
-      updateToggleButton();
+  /**
+   * Create clear button if it doesn't exist
+   * @returns {HTMLElement|null} The created button or null
+   */
+  function createClearButton() {
+    if (!elements.saveButton) return null;
+    
+    const clearBtn = document.createElement('button');
+    clearBtn.id = 'clearButton';
+    clearBtn.textContent = 'Reset Defaults';
+    clearBtn.style.marginLeft = '10px';
+    
+    elements.saveButton.parentNode.insertBefore(clearBtn, elements.saveButton.nextSibling);
+    clearBtn.addEventListener('click', resetPathsToDefaults);
+    
+    return clearBtn;
+  }
+  
+  /**
+   * Toggle debug mode
+   */
+  function toggleDebugMode() {
+    state.debugMode = !state.debugMode;
+    
+    if (elements.debugToggle) {
+      elements.debugToggle.textContent = `Debug: ${state.debugMode ? 'ON' : 'OFF'}`;
+      elements.debugToggle.classList.toggle('active', state.debugMode);
     }
     
-    if (result.debugMode !== undefined) {
-      debugMode = result.debugMode;
-      if (debugToggle) {
-        debugToggle.textContent = `Debug: ${debugMode ? 'ON' : 'OFF'}`;
-        if (debugMode) {
-          debugToggle.classList.add('active');
-        } else {
-          debugToggle.classList.remove('active');
-        }
-      }
-    }
+    // Save state and notify background script
+    chrome.storage.local.set({ debugMode: state.debugMode });
     
-    // Notify background script of the paths
     try {
-      chrome.runtime.sendMessage({
-        action: 'updatePaths',
-        paths: targetPaths
-      }, function(response) {
-        // Check if the background sanitized our paths differently
-        if (response && response.sanitizedPaths) {
-          // Use the sanitized paths from background
-          targetPaths = response.sanitizedPaths;
-          if (pathsInput && needsUpdate) {
-            pathsInput.value = targetPaths.join('\n');
-          }
-        }
-      });
-    } catch (e) {
-      console.error('Error sending forced paths to background:', e);
-    }
-  });
-  
-  // Request current status from background
-  try {
-    chrome.runtime.sendMessage({ action: 'getStatus' }, (response) => {
-      if (response) {
-        isListening = response.isListening;
-        updateToggleButton();
-        
-        // Only update paths if we have a good response and if the UI needs an update
-        if (response.targetPaths && Array.isArray(response.targetPaths) && 
-            response.targetPaths.length > 0 && needsUpdate) {
-          // Ensure no bad paths got through
-          const cleanPaths = response.targetPaths.filter(path => 
-            !path.includes('_experience.analytics') && 
-            !path.includes('_intelcorp') &&
-            !path.includes('meta.state') &&
-            path !== 'timestamp'
-          );
-          
-          // Only update if we have clean paths
-          if (cleanPaths.length > 0) {
-            targetPaths = cleanPaths;
-            pathsInput.value = targetPaths.join('\n');
-          }
-        }
-      }
-    });
-  } catch (e) {
-    console.error('Error getting status from background:', e);
-  }
-}
-
-// Update the toggle button appearance based on listening state
-function updateToggleButton() {
-  if (isListening) {
-    toggleButton.textContent = 'Listening: ON';
-    toggleButton.classList.add('active');
-  } else {
-    toggleButton.textContent = 'Listening: OFF';
-    toggleButton.classList.remove('active');
-  }
-}
-
-// Toggle listening state
-function toggleListening() {
-  isListening = !isListening;
-  
-  // Update UI
-  updateToggleButton();
-  
-  // Save state and notify background script
-  chrome.storage.local.set({ isListening });
-  try {
-    chrome.runtime.sendMessage({ 
-      action: 'toggleListening', 
-      value: isListening 
-    }, (response) => {
-      if (response && response.status === 'success') {
-        updateStatus(`Listening ${isListening ? 'enabled' : 'disabled'}`);
-      }
-    });
-  } catch (e) {
-    console.error('Error sending toggle message:', e);
-    updateStatus('Error communicating with background. Please refresh.');
-  }
-}
-
-// Save target paths
-function savePaths() {
-  // Our core forced paths - these will ALWAYS be included
-  const forcedPaths = getDefaultPaths();
-  
-  const input = pathsInput.value.trim();
-  
-  if (input) {
-    // Split by newlines and filter out empty lines
-    const userPaths = input.split('\n')
-      .map(path => path.trim())
-      .filter(path => path.length > 0);
-    
-    // Combine user paths with our forced paths, ensuring there are no duplicates
-    const combinedPaths = [...new Set([...forcedPaths, ...userPaths])];
-    
-    // Ensure none of the old defaults are included
-    const oldDefaultPaths = [
-      '_experience.analytics.customDimensions.eVars.eVar41',
-      '_experience.analytics.customDimensions.eVars.eVar18',
-      '_intelcorp.web.dimensions',
-      'meta.state',
-      'timestamp'
-    ];
-    
-    targetPaths = combinedPaths.filter(path => !oldDefaultPaths.includes(path));
-    
-    // Update the UI
-    pathsInput.value = targetPaths.join('\n');
-    
-    // Save to storage and notify background script
-    chrome.storage.local.set({ targetPaths });
-    try {
-      chrome.runtime.sendMessage({
-        action: 'updatePaths',
-        paths: targetPaths
+      chrome.runtime.sendMessage({ 
+        action: 'toggleDebug', 
+        value: state.debugMode 
       }, (response) => {
         if (response && response.status === 'success') {
-          updateStatus(`Saved ${targetPaths.length} path(s)`);
+          updateStatus(`Debug mode ${state.debugMode ? 'enabled' : 'disabled'}`);
         }
       });
     } catch (e) {
-      console.error('Error sending paths update:', e);
-      updateStatus('Paths saved locally, but error communicating with background.');
+      console.error('Error sending debug toggle message:', e);
     }
-  } else {
-    // If no input, just use our forced paths
-    targetPaths = forcedPaths;
-    pathsInput.value = targetPaths.join('\n');
+  }
+  
+  /**
+   * Initialize connection to background page
+   */
+  function connectToBackgroundPage() {
+    try {
+      state.backgroundPort = chrome.runtime.connect({ name: 'devtools-panel' });
+      
+      state.backgroundPort.onMessage.addListener((message) => {
+        if (message.action === 'displayResults') {
+          addResult(message.results, message.url, message.requestInfo, message.fullXdm);
+        } else if (message.action === 'statusUpdate') {
+          updateStatus(message.status);
+        }
+      });
+      
+      // Send init message to let background know we're connected
+      try {
+        state.backgroundPort.postMessage({ action: 'devtools-init' });
+      } catch (e) {
+        console.error('Error sending init message via port:', e);
+      }
+      
+      // Reconnect if disconnected, with backoff
+      state.backgroundPort.onDisconnect.addListener(() => {
+        state.backgroundPort = null;
+        
+        if (state.connectionAttempts < CONFIG.MAX_RECONNECT_ATTEMPTS) {
+          state.connectionAttempts++;
+          const delay = Math.pow(2, state.connectionAttempts) * 1000; // Exponential backoff
+          setTimeout(connectToBackgroundPage, delay);
+        } else {
+          updateStatus('Connection lost. Please refresh DevTools panel.');
+        }
+      });
+      
+      // Also send init message via runtime messaging as a backup
+      try {
+        chrome.runtime.sendMessage({ action: 'devtools-init' });
+      } catch (e) {
+        console.error('Error sending init via runtime:', e);
+      }
+      
+      // Reset connection attempts on successful connection
+      state.connectionAttempts = 0;
+    } catch (e) {
+      console.error('Error connecting to background page:', e);
+      updateStatus('Error connecting to background. Please refresh DevTools panel.');
+    }
+  }
+  
+  /**
+   * Initialize UI based on saved state
+   */
+  function initializeUI() {
+    // Our forced default paths - we will ALWAYS use these
+    const forcedPaths = getDefaultPaths();
     
-    chrome.storage.local.set({ targetPaths });
+    // Check if we need to update the path input (if it's empty or contains bad paths)
+    const currentValue = elements.pathsInput.value;
+    const needsUpdate = !currentValue || containsBadPaths(currentValue);
+    
+    if (needsUpdate) {
+      // Set our paths in the UI
+      state.targetPaths = forcedPaths;
+      elements.pathsInput.value = forcedPaths.join('\n');
+      
+      // Save to storage
+      chrome.storage.local.set({ targetPaths: forcedPaths });
+    }
+    
+    // Get only isListening and debugMode from storage
+    chrome.storage.local.get(['isListening', 'debugMode'], (result) => {
+      if (result.isListening !== undefined) {
+        state.isListening = result.isListening;
+        updateToggleButton();
+      }
+      
+      if (result.debugMode !== undefined) {
+        state.debugMode = result.debugMode;
+        if (elements.debugToggle) {
+          elements.debugToggle.textContent = `Debug: ${state.debugMode ? 'ON' : 'OFF'}`;
+          elements.debugToggle.classList.toggle('active', state.debugMode);
+        }
+      }
+      
+      // Notify background script of the paths
+      sendPathsToBackground(state.targetPaths, needsUpdate);
+    });
+    
+    // Request current status from background
+    requestStatusFromBackground(needsUpdate);
+  }
+  
+  /**
+   * Send paths to background script
+   * @param {string[]} paths - The paths to send
+   * @param {boolean} shouldUpdateUI - Whether to update the UI with the response
+   */
+  function sendPathsToBackground(paths, shouldUpdateUI = true) {
     try {
       chrome.runtime.sendMessage({
         action: 'updatePaths',
-        paths: targetPaths
+        paths: paths
+      }, function(response) {
+        // Check if the background sanitized our paths differently
+        if (response && response.sanitizedPaths && shouldUpdateUI) {
+          // Use the sanitized paths from background
+          state.targetPaths = response.sanitizedPaths;
+          if (elements.pathsInput) {
+            elements.pathsInput.value = state.targetPaths.join('\n');
+          }
+        }
       });
     } catch (e) {
-      console.error('Error sending default paths update:', e);
+      console.error('Error sending paths to background:', e);
     }
-    updateStatus('Saved default paths');
   }
-}
-
-// Reset paths to suggested defaults
-function resetPathsToDefaults() {
-  const suggestedPaths = getDefaultPaths();
   
-  targetPaths = suggestedPaths;
-  pathsInput.value = targetPaths.join('\n');
+  /**
+   * Request current status from background
+   * @param {boolean} shouldUpdatePaths - Whether to update paths with the response
+   */
+  function requestStatusFromBackground(shouldUpdatePaths = false) {
+    try {
+      chrome.runtime.sendMessage({ action: 'getStatus' }, (response) => {
+        if (response) {
+          state.isListening = response.isListening;
+          updateToggleButton();
+          
+          // Only update paths if we have a good response and if the UI needs an update
+          if (response.targetPaths && Array.isArray(response.targetPaths) && 
+              response.targetPaths.length > 0 && shouldUpdatePaths) {
+            // Ensure no bad paths got through
+            const cleanPaths = response.targetPaths.filter(path => 
+              !containsBadPaths(path)
+            );
+            
+            // Only update if we have clean paths
+            if (cleanPaths.length > 0) {
+              state.targetPaths = cleanPaths;
+              elements.pathsInput.value = state.targetPaths.join('\n');
+            }
+          }
+        }
+      });
+    } catch (e) {
+      console.error('Error getting status from background:', e);
+    }
+  }
   
-  // Save to storage and notify background script
-  chrome.storage.local.set({ targetPaths });
-  try {
-    chrome.runtime.sendMessage({
-      action: 'updatePaths',
-      paths: targetPaths
-    }, (response) => {
-      if (response && response.status === 'success') {
-        updateStatus(`Reset to default paths`);
+  /**
+   * Update the toggle button appearance based on listening state
+   */
+  function updateToggleButton() {
+    if (!elements.toggleButton) return;
+    
+    elements.toggleButton.textContent = `Listening: ${state.isListening ? 'ON' : 'OFF'}`;
+    elements.toggleButton.classList.toggle('active', state.isListening);
+  }
+  
+  /**
+   * Toggle listening state
+   */
+  function toggleListening() {
+    state.isListening = !state.isListening;
+    
+    // Update UI
+    updateToggleButton();
+    
+    // Save state and notify background script
+    chrome.storage.local.set({ isListening: state.isListening });
+    try {
+      chrome.runtime.sendMessage({ 
+        action: 'toggleListening', 
+        value: state.isListening 
+      }, (response) => {
+        if (response && response.status === 'success') {
+          updateStatus(`Listening ${state.isListening ? 'enabled' : 'disabled'}`);
+        }
+      });
+    } catch (e) {
+      console.error('Error sending toggle message:', e);
+      updateStatus('Error communicating with background. Please refresh.');
+    }
+  }
+  
+  /**
+   * Save target paths
+   */
+  function savePaths() {
+    // Our core forced paths - these will ALWAYS be included
+    const forcedPaths = getDefaultPaths();
+    
+    const input = elements.pathsInput.value.trim();
+    
+    if (input) {
+      // Split by newlines and filter out empty lines
+      const userPaths = input.split('\n')
+        .map(path => path.trim())
+        .filter(path => path.length > 0);
+      
+      // Combine user paths with our forced paths, ensuring there are no duplicates
+      const combinedPaths = [...new Set([...forcedPaths, ...userPaths])];
+      
+      // Filter out bad paths
+      state.targetPaths = combinedPaths.filter(path => !containsBadPaths(path));
+      
+      // Update the UI
+      elements.pathsInput.value = state.targetPaths.join('\n');
+      
+      // Save to storage and notify background script
+      chrome.storage.local.set({ targetPaths: state.targetPaths });
+      sendPathsToBackground(state.targetPaths, false);
+      
+      updateStatus(`Saved ${state.targetPaths.length} path(s)`);
+    } else {
+      // If no input, just use our forced paths
+      state.targetPaths = forcedPaths;
+      elements.pathsInput.value = state.targetPaths.join('\n');
+      
+      chrome.storage.local.set({ targetPaths: state.targetPaths });
+      sendPathsToBackground(state.targetPaths, false);
+      
+      updateStatus('Saved default paths');
+    }
+  }
+  
+  /**
+   * Reset paths to suggested defaults
+   */
+  function resetPathsToDefaults() {
+    const suggestedPaths = getDefaultPaths();
+    
+    state.targetPaths = suggestedPaths;
+    elements.pathsInput.value = state.targetPaths.join('\n');
+    
+    // Save to storage and notify background script
+    chrome.storage.local.set({ targetPaths: state.targetPaths });
+    sendPathsToBackground(state.targetPaths, false);
+    
+    updateStatus(`Reset to default paths`);
+  }
+  
+  /**
+   * Add a new result to the results container
+   * @param {Object} resultData - The data to display
+   * @param {string} url - The request URL
+   * @param {Object} requestInfo - Information about the request
+   * @param {Object} fullXdm - The complete XDM object
+   */
+  function addResult(resultData, url, requestInfo = {}, fullXdm = null) {
+    if (!elements.resultsContainer || !resultData) {
+      console.error("Cannot add result: missing container or data", !!elements.resultsContainer, !!resultData);
+      return;
+    }
+    
+    if (state.debugMode) {
+      console.log("[Panel] Adding result:", 
+        { 
+          resultKeys: Object.keys(resultData), 
+          url, 
+          fullXdmAvailable: !!fullXdm,
+          requestInfo: requestInfo
+        }
+      );
+    }
+    
+    // Clear "no results" message if present
+    const noResultsElement = elements.resultsContainer.querySelector('.no-results');
+    if (noResultsElement) {
+      elements.resultsContainer.removeChild(noResultsElement);
+    }
+    
+    // Create and configure a new result element
+    const resultElement = document.createElement('div');
+    resultElement.className = 'result';
+    
+    // Get the event type - this is specific to Adobe Web SDK
+    const eventType = resultData.eventType || 'unknown';
+    
+    // Determine badge color based on event type
+    const badgeColor = getBadgeColor(eventType);
+    
+    // Separate simple and complex values
+    const { simpleValues, complexValues } = categorizeValues(resultData);
+    
+    // Try to extract ECID from the fullXdm object if available
+    try {
+      if (fullXdm && fullXdm.handle && Array.isArray(fullXdm.handle)) {
+        for (const item of fullXdm.handle) {
+          if (item && item.type === 'identity:result' && item.payload && 
+              item.payload.identity && item.payload.identity.namespace && 
+              item.payload.identity.namespace.code === 'ECID') {
+            
+            simpleValues['ECID'] = item.payload.identity.id;
+            
+            if (state.debugMode) {
+              console.log("[Panel] ECID found:", simpleValues['ECID']);
+            }
+            break;
+          }
+        }
+      }
+    } catch (e) {
+      if (state.debugMode) {
+        console.error("[Panel] Error extracting ECID:", e);
+      }
+    }
+    
+    // Create HTML elements
+    appendHeader(resultElement, eventType, url, badgeColor);
+    appendSimpleValuesTable(resultElement, simpleValues);
+    appendComplexValues(resultElement, complexValues);
+    appendFullXdm(resultElement, fullXdm);
+    appendResponseData(resultElement, requestInfo);
+    
+    // Add the result to the container
+    elements.resultsContainer.prepend(resultElement);
+    
+    // Limit the number of displayed results
+    limitResultsCount();
+  }
+  
+  /**
+   * Get appropriate badge color for event type
+   * @param {string} eventType - The event type
+   * @returns {string} The color code
+   */
+  function getBadgeColor(eventType) {
+    if (eventType === 'web.webpagedetails.pageViews') {
+      return '#9C27B0'; // Purple for page views
+    } else if (eventType.includes('click') || eventType.includes('link')) {
+      return '#FF9800'; // Orange for clicks/links
+    }
+    return '#4CAF50'; // Default green
+  }
+  
+  /**
+   * Categorize values into simple and complex
+   * @param {Object} data - The data to categorize
+   * @returns {Object} Object with simpleValues and complexValues
+   */
+  function categorizeValues(data) {
+    const simpleValues = {};
+    const complexValues = {};
+    
+    Object.keys(data).forEach(key => {
+      const value = data[key];
+      if (value !== null && typeof value === 'object') {
+        complexValues[key] = value;
+      } else {
+        simpleValues[key] = value;
       }
     });
-  } catch (e) {
-    console.error('Error sending paths update:', e);
-    updateStatus('Paths reset locally, but error communicating with background.');
-  }
-}
-
-// Add a new result to the results container
-function addResult(resultData, url, requestInfo = {}, fullXdm = null) {
-  // Get the container for the results
-  const resultsContainer = document.getElementById('results');
-  
-  // Clear "no results" message if present
-  const noResultsElement = resultsContainer.querySelector('.no-results');
-  if (noResultsElement) {
-    resultsContainer.removeChild(noResultsElement);
+    
+    return { simpleValues, complexValues };
   }
   
-  // Create and configure a new result element
-  const resultElement = document.createElement('div');
-  resultElement.className = 'result';
-  
-  // Get the event type - this is specific to Adobe Web SDK
-  let eventType = resultData.eventType || 'unknown';
-  
-  // Add event type badge with appropriate styling
-  let badgeColor = '#4CAF50'; // Default green
-  if (eventType === 'web.webpagedetails.pageViews') {
-    badgeColor = '#9C27B0'; // Purple for page views
-  } else if (eventType.includes('click') || eventType.includes('link')) {
-    badgeColor = '#FF9800'; // Orange for clicks/links
-  }
-  
-  // Separate simple and complex values
-  const simpleValues = {};
-  const complexValues = {};
-  
-  Object.keys(resultData).forEach(key => {
-    const value = resultData[key];
-    if (value !== null && typeof value === 'object') {
-      complexValues[key] = value;
-    } else {
-      simpleValues[key] = value;
-    }
-  });
-  
-  // Add event title and URL
-  const urlDisplay = url ? new URL(url).pathname : 'No URL';
-  
-  // Create the header section
-  const headerDiv = document.createElement('div');
-  headerDiv.className = 'result-header';
-  headerDiv.innerHTML = `
-    <div class="event-type-badge" style="background-color: ${badgeColor};">${eventType}</div>
-    <div class="result-url" title="${url || 'No URL'}">${urlDisplay}</div>
-    <div class="timestamp">${new Date().toLocaleTimeString()}</div>
-  `;
-  resultElement.appendChild(headerDiv);
-  
-  // Create the table for simple values
-  const detailsDiv = document.createElement('div');
-  detailsDiv.className = 'result-details';
-  
-  const table = document.createElement('table');
-  table.className = 'pretty-table';
-  
-  const thead = document.createElement('thead');
-  thead.innerHTML = `
-    <tr>
-      <th>Path</th>
-      <th>Value</th>
-    </tr>
-  `;
-  table.appendChild(thead);
-  
-  const tbody = document.createElement('tbody');
-  
-  // Add alternating row colors
-  let rowIndex = 0;
-  Object.keys(simpleValues).forEach(key => {
-    const row = document.createElement('tr');
-    if (rowIndex % 2 === 1) {
-      row.className = 'alt-row';
-    }
-    row.innerHTML = `
-      <td>${key}</td>
-      <td>${simpleValues[key]}</td>
+  /**
+   * Append header section to result element
+   * @param {HTMLElement} resultElement - The element to append to
+   * @param {string} eventType - The event type
+   * @param {string} url - The request URL
+   * @param {string} badgeColor - The badge color
+   */
+  function appendHeader(resultElement, eventType, url, badgeColor) {
+    const urlDisplay = url ? new URL(url).pathname : 'No URL';
+    
+    const headerDiv = document.createElement('div');
+    headerDiv.className = 'result-header';
+    headerDiv.innerHTML = `
+      <div class="event-type-badge" style="background-color: ${badgeColor};">${eventType}</div>
+      <div class="result-url" title="${url || 'No URL'}">${urlDisplay}</div>
+      <div class="timestamp">${new Date().toLocaleTimeString()}</div>
     `;
-    tbody.appendChild(row);
-    rowIndex++;
-  });
+    
+    resultElement.appendChild(headerDiv);
+  }
   
-  table.appendChild(tbody);
-  detailsDiv.appendChild(table);
-  resultElement.appendChild(detailsDiv);
+  /**
+   * Append simple values table to result element
+   * @param {HTMLElement} resultElement - The element to append to
+   * @param {Object} simpleValues - The simple values to display
+   */
+  function appendSimpleValuesTable(resultElement, simpleValues) {
+    const detailsDiv = document.createElement('div');
+    detailsDiv.className = 'result-details';
+    
+    const table = document.createElement('table');
+    table.className = 'pretty-table';
+    
+    const thead = document.createElement('thead');
+    thead.innerHTML = `
+      <tr>
+        <th>Path</th>
+        <th>Value</th>
+      </tr>
+    `;
+    table.appendChild(thead);
+    
+    const tbody = document.createElement('tbody');
+    
+    // Add alternating row colors
+    let rowIndex = 0;
+    Object.keys(simpleValues).forEach(key => {
+      const row = document.createElement('tr');
+      if (rowIndex % 2 === 1) {
+        row.className = 'alt-row';
+      }
+      row.innerHTML = `
+        <td>${key}</td>
+        <td>${simpleValues[key]}</td>
+      `;
+      tbody.appendChild(row);
+      rowIndex++;
+    });
+    
+    table.appendChild(tbody);
+    detailsDiv.appendChild(table);
+    resultElement.appendChild(detailsDiv);
+  }
   
-  // Add complex values in a collapsible section
-  if (Object.keys(complexValues).length > 0) {
+  /**
+   * Append complex values to result element
+   * @param {HTMLElement} resultElement - The element to append to
+   * @param {Object} complexValues - The complex values to display
+   */
+  function appendComplexValues(resultElement, complexValues) {
+    if (Object.keys(complexValues).length === 0) return;
+    
     const complexContainer = document.createElement('div');
     complexContainer.className = 'collapsible-container';
     
@@ -508,7 +577,6 @@ function addResult(resultData, url, requestInfo = {}, fullXdm = null) {
       fieldValue.className = 'complex-field-value';
       
       try {
-        // Just add a simple header before the JSON content
         fieldValue.textContent = `${key} details:\n${JSON.stringify(complexValues[key], null, 2)}`;
       } catch (e) {
         fieldValue.textContent = `${key} details:\nError formatting complex value: ${e.message}`;
@@ -519,8 +587,7 @@ function addResult(resultData, url, requestInfo = {}, fullXdm = null) {
     
     // Add event listener to toggle visibility
     complexHeader.addEventListener('click', () => {
-      const isVisible = complexContent.style.display !== 'none';
-      complexContent.style.display = isVisible ? 'none' : 'block';
+      complexContent.style.display = complexContent.style.display === 'none' ? 'block' : 'none';
     });
     
     complexContainer.appendChild(complexHeader);
@@ -528,8 +595,14 @@ function addResult(resultData, url, requestInfo = {}, fullXdm = null) {
     resultElement.appendChild(complexContainer);
   }
   
-  // Add Full XDM button and container if we have XDM data
-  if (fullXdm) {
+  /**
+   * Append full XDM object to result element
+   * @param {HTMLElement} resultElement - The element to append to
+   * @param {Object} fullXdm - The full XDM object
+   */
+  function appendFullXdm(resultElement, fullXdm) {
+    if (!fullXdm) return;
+    
     const xdmContainer = document.createElement('div');
     xdmContainer.className = 'collapsible-container';
     
@@ -554,8 +627,7 @@ function addResult(resultData, url, requestInfo = {}, fullXdm = null) {
     
     // Add event listener to toggle visibility
     xdmHeader.addEventListener('click', () => {
-      const isVisible = xdmContent.style.display !== 'none';
-      xdmContent.style.display = isVisible ? 'none' : 'block';
+      xdmContent.style.display = xdmContent.style.display === 'none' ? 'block' : 'none';
     });
     
     xdmContainer.appendChild(xdmHeader);
@@ -563,8 +635,14 @@ function addResult(resultData, url, requestInfo = {}, fullXdm = null) {
     resultElement.appendChild(xdmContainer);
   }
   
-  // Add the response data container if available in requestInfo
-  if (requestInfo && requestInfo.response) {
+  /**
+   * Append response data to result element
+   * @param {HTMLElement} resultElement - The element to append to
+   * @param {Object} requestInfo - The request info object
+   */
+  function appendResponseData(resultElement, requestInfo) {
+    if (!requestInfo || !requestInfo.response) return;
+    
     const responseContainer = document.createElement('div');
     responseContainer.className = 'collapsible-container';
     
@@ -589,8 +667,7 @@ function addResult(resultData, url, requestInfo = {}, fullXdm = null) {
     
     // Add event listener to toggle visibility
     responseHeader.addEventListener('click', () => {
-      const isVisible = responseContent.style.display !== 'none';
-      responseContent.style.display = isVisible ? 'none' : 'block';
+      responseContent.style.display = responseContent.style.display === 'none' ? 'block' : 'none';
     });
     
     responseContainer.appendChild(responseHeader);
@@ -598,79 +675,135 @@ function addResult(resultData, url, requestInfo = {}, fullXdm = null) {
     resultElement.appendChild(responseContainer);
   }
   
-  // Add the result to the container
-  resultsContainer.prepend(resultElement);
-  
-  // Limit the number of displayed results
-  const maxResults = 20;
-  const results = document.querySelectorAll('.result');
-  if (results.length > maxResults) {
-    for (let i = maxResults; i < results.length; i++) {
-      results[i].remove();
+  /**
+   * Limit the number of displayed results
+   */
+  function limitResultsCount() {
+    const results = document.querySelectorAll('.result');
+    if (results.length > CONFIG.MAX_RESULTS) {
+      for (let i = CONFIG.MAX_RESULTS; i < results.length; i++) {
+        results[i].remove();
+      }
     }
   }
-}
-
-// Update status message
-function updateStatus(message) {
-  statusElement.textContent = message;
-}
-
-// Event listeners
-toggleButton.addEventListener('click', toggleListening);
-saveButton.addEventListener('click', savePaths);
-if (debugToggle) debugToggle.addEventListener('click', toggleDebugMode);
-if (clearButton) clearButton.addEventListener('click', resetPathsToDefaults);
-
-// Initialize the UI when panel is opened
-document.addEventListener('DOMContentLoaded', () => {
-  // Check storage for a flag indicating if we've reloaded already
-  chrome.storage.local.get(['reloadedForCleanup'], function(result) {
-    if (!result.reloadedForCleanup) {
-      // Set the flag and force a reload to ensure we pick up sanitized storage
-      chrome.storage.local.set({ reloadedForCleanup: true }, function() {
-        location.reload();
-        return; // Stop execution here
-      });
-    } else {
-      // Continue with normal initialization
-      // Force our default paths - no version checking needed
-      const forcedPaths = getDefaultPaths();
-      
-      // Set paths in UI if available
-      targetPaths = forcedPaths;
-      if (pathsInput) {
-        pathsInput.value = forcedPaths.join('\n');
-      }
-      
-      // Always save our forced paths with a new version
-      chrome.storage.local.set({ 
-        targetPaths: forcedPaths,
-        extensionVersion: '1.0.5' // Increment version
-      });
-      
-      // Notify background script of the forced paths
-      try {
-        chrome.runtime.sendMessage({
-          action: 'updatePaths',
-          paths: forcedPaths
-        }, function(response) {
-          // Check if the background sanitized our paths differently
-          if (response && response.sanitizedPaths) {
-            // Use the sanitized paths from background
-            targetPaths = response.sanitizedPaths;
-            if (pathsInput) {
-              pathsInput.value = targetPaths.join('\n');
-            }
-          }
-        });
-      } catch (e) {
-        console.error('Error sending forced paths on init:', e);
-      }
-      
-      // Continue with initialization
-      initializeUI();
-      connectToBackgroundPage();
+  
+  /**
+   * Update status message
+   * @param {string} message - The message to display
+   */
+  function updateStatus(message) {
+    if (elements.statusElement) {
+      elements.statusElement.textContent = message;
     }
-  });
-}); 
+  }
+  
+  /**
+   * Initialize the panel
+   */
+  function init() {
+    // Force default paths
+    forceClearAndSetDefaults();
+    
+    // Set up event listeners
+    registerEventListeners();
+    
+    // Initialize the UI when panel is opened
+    document.addEventListener('DOMContentLoaded', handleDOMContentLoaded);
+  }
+  
+  /**
+   * Force clear storage and set defaults
+   */
+  function forceClearAndSetDefaults() {
+    const forcedPaths = getDefaultPaths();
+    
+    chrome.storage.local.clear(() => {
+      // Set our defaults
+      chrome.storage.local.set({
+        targetPaths: forcedPaths,
+        extensionVersion: CONFIG.DEFAULT_EXTENSION_VERSION,
+        isListening: false,
+        debugMode: true
+      }, () => {
+        // Update the UI if pathsInput is available
+        if (elements.pathsInput) {
+          state.targetPaths = forcedPaths;
+          elements.pathsInput.value = forcedPaths.join('\n');
+        }
+        
+        // Notify background script
+        sendPathsToBackground(forcedPaths, false);
+      });
+    });
+  }
+  
+  /**
+   * Register event listeners
+   */
+  function registerEventListeners() {
+    if (elements.toggleButton) {
+      elements.toggleButton.addEventListener('click', toggleListening);
+    }
+    
+    if (elements.saveButton) {
+      elements.saveButton.addEventListener('click', savePaths);
+    }
+    
+    if (elements.debugToggle) {
+      elements.debugToggle.addEventListener('click', toggleDebugMode);
+    }
+    
+    if (elements.clearButton) {
+      elements.clearButton.addEventListener('click', resetPathsToDefaults);
+    }
+  }
+  
+  /**
+   * Handle DOMContentLoaded event
+   */
+  function handleDOMContentLoaded() {
+    // Check storage for a flag indicating if we've reloaded already
+    chrome.storage.local.get(['reloadedForCleanup'], function(result) {
+      if (!result.reloadedForCleanup) {
+        // Set the flag and force a reload to ensure we pick up sanitized storage
+        chrome.storage.local.set({ reloadedForCleanup: true }, function() {
+          location.reload();
+          return; // Stop execution here
+        });
+      } else {
+        // Continue with normal initialization
+        setupInitialState();
+      }
+    });
+  }
+  
+  /**
+   * Set up initial state
+   */
+  function setupInitialState() {
+    // Force our default paths
+    const forcedPaths = getDefaultPaths();
+    
+    // Set paths in UI if available
+    state.targetPaths = forcedPaths;
+    if (elements.pathsInput) {
+      elements.pathsInput.value = forcedPaths.join('\n');
+    }
+    
+    // Always save our forced paths with a new version
+    chrome.storage.local.set({ 
+      targetPaths: forcedPaths,
+      extensionVersion: CONFIG.DEFAULT_EXTENSION_VERSION
+    });
+    
+    // Notify background script of the forced paths
+    sendPathsToBackground(forcedPaths, true);
+    
+    // Continue with initialization
+    initializeUI();
+    connectToBackgroundPage();
+  }
+  
+  // Start the module
+  init();
+})(); 
