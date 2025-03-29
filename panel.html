@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Adobe Web SDK Inspector Panel</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 16px;
+    }
+    
+    h1 {
+      font-size: 18px;
+      margin-top: 0;
+    }
+    
+    .container {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    
+    .controls {
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    
+    .toggle-button {
+      background-color: #f44336;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    
+    .toggle-button.active {
+      background-color: #4CAF50;
+    }
+    
+    .paths-container {
+      margin-bottom: 16px;
+    }
+    
+    textarea {
+      width: 100%;
+      height: 120px;
+      margin-bottom: 8px;
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      resize: none;
+      font-family: monospace;
+      font-size: 14px;
+    }
+    
+    .save-button {
+      background-color: #2196F3;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    
+    .save-button:hover {
+      background-color: #0b7dda;
+    }
+    
+    .results {
+      flex-grow: 1;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      padding: 8px;
+      overflow: auto;
+      font-family: monospace;
+      font-size: 14px;
+      background-color: #f8f8f8;
+    }
+    
+    .result {
+      margin-bottom: 16px;
+      border-radius: 4px;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      background-color: white;
+    }
+    
+    .result-header {
+      display: flex;
+      align-items: center;
+      padding: 8px;
+      background-color: #f5f5f5;
+      border-bottom: 1px solid #ddd;
+    }
+    
+    .event-type-badge {
+      color: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-weight: bold;
+      margin-right: 10px;
+    }
+    
+    .result-url {
+      flex-grow: 1;
+      font-size: 12px;
+      color: #666;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    .timestamp {
+      color: #888;
+      font-size: 12px;
+      margin-left: 10px;
+    }
+    
+    .result-details {
+      padding: 10px;
+    }
+    
+    /* Enhanced table styling */
+    .pretty-table {
+      width: 100%;
+      border-collapse: collapse;
+      border-radius: 4px;
+      overflow: hidden;
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.05);
+      font-family: monospace;
+    }
+    
+    .pretty-table th {
+      background-color: #E3F2FD;
+      color: #1565C0;
+      font-weight: bold;
+      text-align: left;
+      padding: 10px;
+      border-bottom: 2px solid #BBDEFB;
+      font-size: 13px;
+    }
+    
+    .pretty-table td {
+      padding: 8px 10px;
+      border-bottom: 1px solid #f0f0f0;
+      font-size: 13px;
+    }
+    
+    .pretty-table tr:last-child td {
+      border-bottom: none;
+    }
+    
+    .pretty-table .alt-row {
+      background-color: #F5F5F5;
+    }
+    
+    .pretty-table tr:hover {
+      background-color: #EEEEEE;
+    }
+    
+    /* Collapsible section styling */
+    .collapsible-container {
+      margin: 0 10px 10px 10px;
+    }
+    
+    .collapsible-header {
+      padding: 8px 12px;
+      background-color: #000;
+      color: #f00;
+      font-weight: bold;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin-bottom: 1px;
+    }
+    
+    .collapsible-header:hover {
+      opacity: 0.9;
+    }
+    
+    .complex-header::before,
+    .xdm-header::before {
+      content: "▶ ";
+      font-size: 10px;
+      margin-right: 5px;
+    }
+    
+    .collapsible-content {
+      background-color: #FFFDE7;
+      border-radius: 4px;
+      border: 1px solid #FFE082;
+      padding: 10px;
+      margin-top: 1px;
+    }
+    
+    /* Complex field styles */
+    .complex-field-value {
+      background-color: #fff;
+      padding: 8px;
+      border-radius: 4px;
+      overflow: auto;
+      max-height: 200px;
+      font-family: monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      margin: 0 0 10px 0;
+      border: 1px solid #e0e0e0;
+    }
+    
+    .complex-field-value:last-child {
+      margin-bottom: 0;
+    }
+    
+    /* XDM styling */
+    .xdm-content {
+      background-color: #fff;
+      padding: 8px;
+      border-radius: 4px;
+      overflow: auto;
+      max-height: 300px;
+      font-family: monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      margin: 0;
+      border: 1px solid #e0e0e0;
+    }
+    
+    .status {
+      margin-top: 8px;
+      padding: 8px;
+      border-radius: 4px;
+      background-color: #f5f5f5;
+      font-size: 14px;
+    }
+    
+    .no-results {
+      padding: 20px;
+      text-align: center;
+      color: #999;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Adobe Web SDK Inspector</h1>
+    
+    <div class="controls">
+      <button id="toggleButton" class="toggle-button">Listening: OFF</button>
+      <div id="status" class="status">Ready to use</div>
+    </div>
+    
+    <div class="paths-container">
+      <h3>Target Paths</h3>
+      <textarea id="pathsInput" placeholder="Enter paths to extract, one per line...
+Example: web.webPageDetails.URL"></textarea>
+      <button id="saveButton" class="save-button">Save Paths</button>
+    </div>
+    
+    <h3>Results</h3>
+    <div id="results" class="results">
+      <div class="no-results">No results yet. Start listening to see data here.</div>
+    </div>
+  </div>
+  
+  <script src="panel.js"></script>
+</body>
+</html> 

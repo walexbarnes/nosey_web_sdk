@@ -1,0 +1,228 @@
+{
+	"events": [
+		{
+			"xdm": {
+				"_experience": {
+					"analytics": {
+						"customDimensions": {
+							"eVars": {
+								"eVar1": "asmo-na",
+								"eVar10": "intc:products:details:processors",
+								"eVar101": "mozilla/5.0 (windows nt 10.0; win64; x64; rv:136.0) gecko/20100101 firefox/136.0",
+								"eVar102": "default",
+								"eVar103": "unassigned",
+								"eVar11": "row:intc:products:details:processors",
+								"eVar116": "Geo=USA",
+								"eVar117": "false",
+								"eVar130": "236800",
+								"eVar132": "cc_enabled",
+								"eVar133": "salesandmarketingmaterials/productcatalog",
+								"eVar145": "products:details:processors:core-ultra",
+								"eVar146": "en_US",
+								"eVar147": "intel® core™ ultra processors",
+								"eVar151": "1d28f92014cde3f3b507b3e0cb22453d6817319c",
+								"eVar18": "unassigned",
+								"eVar189": "us",
+								"eVar2": "us-en",
+								"eVar20": "levels",
+								"eVar200": "non-china",
+								"eVar202": "wapMainEventHandler",
+								"eVar21": "793290",
+								"eVar22": "anonymous",
+								"eVar24": "anonymous",
+								"eVar3": "intc",
+								"eVar32": "unassigned",
+								"eVar34": "80566242619735534882555745988649694366",
+								"eVar35": "https://www.intel.com/content/www/us/en/products/details/processors/core-ultra.html",
+								"eVar36": "/content/www/us/en/products/details/processors/core-ultra.html",
+								"eVar37": "https://www.intel.com/content/www/us/en/homepage.html",
+								"eVar38": "Components",
+								"eVar39": "click: verticalfeature-1",
+								"eVar4": "intc:asmo-na:us-en",
+								"eVar40": "/content/www/us/en/products/details/processors/core-ultra/article.html",
+								"eVar41": "Components|click: verticalfeature-1|/content/www/us/en/products/details/processors/core-ultra/article.html",
+								"eVar42": "click: in-content",
+								"eVar43": "click: verticalfeature-1",
+								"eVar44": "verticalfeature-1:/content/www/us/en/products/details/processors/core-ultra/article.html",
+								"eVar47": "verticalFeature-1",
+								"eVar5": "asmo-na:us-en",
+								"eVar59": "async |adobetags|profile-aem-global|2025-03-27T00:29:14Z|wa_profile:global|",
+								"eVar6": "asmo-na:us-en:intc",
+								"eVar60": "upe",
+								"eVar63": "intel® core™ ultra processor family",
+								"eVar64": "upeproductscatalog",
+								"eVar65": "upeproductscatalog",
+								"eVar7": "asmo-na:us-en:intc:products",
+								"eVar8": "asmo-na:us-en:intc:products:details",
+								"eVar9": "asmo-na:us-en:intc:products:details:processors",
+								"eVar91": "asmo-na:us-en:intc:products:details:processors"
+							},
+							"lists": {},
+							"props": {
+								"prop1": "asmo-na",
+								"prop10": "intc:products:details:processors",
+								"prop11": "row:intc:products:details:processors",
+								"prop18": "unassigned",
+								"prop2": "us-en",
+								"prop22": "anonymous",
+								"prop24": "anonymous",
+								"prop26": "/content/www/us/en/products/details/processors/core-ultra.html",
+								"prop27": "https://www.intel.com/content/www/us/en/homepage.html",
+								"prop28": "Components",
+								"prop29": "click: verticalfeature-1",
+								"prop3": "intc",
+								"prop30": "/content/www/us/en/products/details/processors/core-ultra/article.html",
+								"prop31": "Components|click: verticalfeature-1|/content/www/us/en/products/details/processors/core-ultra/article.html",
+								"prop32": "click: in-content",
+								"prop33": "click: verticalfeature-1",
+								"prop34": "verticalfeature-1:/content/www/us/en/products/details/processors/core-ultra/article.html",
+								"prop37": "verticalFeature-1",
+								"prop4": "intc:asmo-na:us-en",
+								"prop44": "async |adobetags|profile-aem-global|2025-03-27T00:29:14Z|wa_profile:global|",
+								"prop47": "upeproductscatalog",
+								"prop48": "upeproductscatalog",
+								"prop5": "asmo-na:us-en",
+								"prop52": "asmo-na:us-en:intc:products:details:processors",
+								"prop58": "products:details:processors:core-ultra",
+								"prop6": "asmo-na:us-en:intc",
+								"prop65": "salesandmarketingmaterials/productcatalog",
+								"prop7": "asmo-na:us-en:intc:products",
+								"prop70": "non-china",
+								"prop8": "asmo-na:us-en:intc:products:details",
+								"prop9": "asmo-na:us-en:intc:products:details:processors"
+							}
+						},
+						"event101to200": {
+							"event163": {
+								"id": "163",
+								"value": 1
+							}
+						},
+						"event1to100": {
+							"event47": {
+								"id": "47",
+								"value": 1
+							},
+							"event62": {
+								"id": "62",
+								"value": 2
+							},
+							"event63": {
+								"id": "63",
+								"value": 1
+							},
+							"event73": {
+								"id": "73",
+								"value": 1
+							}
+						}
+					}
+				},
+				"_intelcorp": {
+					"web": {
+						"dimensions": {
+							"consent": "advertising:1|analytics:1|functional:1|globalPrivacyControl:0|doNotTrack:0|dataTransfer:0|dataSharing:0",
+							"fpid": "98edafd3-a5ea-4749-8b96-e73a725d8f48"
+						},
+						"metrics": {}
+					}
+				},
+				"device": {
+					"screenHeight": 800,
+					"screenOrientation": "landscape",
+					"screenWidth": 1280
+				},
+				"endUserIDs": {
+					"_experience": {
+						"mcid": {
+							"authenticatedState": "ambiguous",
+							"primary": true
+						}
+					}
+				},
+				"environment": {
+					"browserDetails": {
+						"viewportHeight": 328,
+						"viewportWidth": 1280
+					},
+					"type": "browser"
+				},
+				"eventType": "linkClick",
+				"implementationDetails": {
+					"environment": "browser",
+					"name": "https://ns.adobe.com/experience/alloy",
+					"version": "2.24.0"
+				},
+				"pixels": {
+					"adnet": {
+						"enabled": false
+					},
+					"common": {
+						"consent_advertising": true,
+						"consent_analytics": true,
+						"consent_functional": true,
+						"cookies": {
+							"_clck": "i8aize|2|ful|1|1913",
+							"_clsk": "1dt703r|1743173242142|1|0|u.clarity.ms/collect",
+							"_gcl_au": "1.1.1415453058.1743173239",
+							"_gd_session": "45b532d1-ed53-4c35-87a6-4b830be56a14",
+							"_gd_visitor": "df37c1ec-0245-4670-896c-36dcacaa7ef4",
+							"ak_bmsc": "5B5950A2F662AEC3F1F2386EFC412EC4~000000000000000000000000000000~YAAQ5MrcF14Ho7OVAQAAkbQ43RsvdvqNzkEZNXt6Ve5byq2djtFWl7Ev0+OZq91E6XbCpxovv6BSOTBCKE8xiIcpHSVaHh98wO6RFtmVxOfaP+80D66AV058TSUzM3MUZ5KM35p6RDo7e4+GOgAvATeyDlwj9G2R6sIea7St+cIoTshE+jSHa3kr9w3sbfsahpki1ANmumbY1iJnobbXtlEZcoEWWWs70ebDGzsuLm3rLLmKEgeWHtM2pdFUh+M2i6+Xg4DQ/7NCGCgaCVmjp4hhAgaYi0Zts8D0isPlekhKT7WLTkzv2/DLxuaI9NeLet8gbx8E3NUfQFQPCokv46HEG1JW3Kl25AuBNzxxvotyHsphb35Fg+SlkQzDHo/26J3a6fv9q5J8+KSdXdVMNcQ3iH0+0Z9EysS1WRozLl2M4gcaWn7cIOKY2FJSFO9gBqo=",
+							"AMCV_AD2A1C8B53308E600A490D4D@AdobeOrg": "MCMID|80566242619735534882555745988649694366",
+							"AWSALB": "GV223Uej0UPLUSFouEKFvGfRhCxRzd9SYvqrrpwb4VgSZ69p30YaDo6khHxg4qgMFSMFN8tZ4hxxrXPOynQuyzySPw38dFeZS/oPIc/vLcd/7dnA7w8QhrIP/mvW",
+							"AWSALBCORS": "GV223Uej0UPLUSFouEKFvGfRhCxRzd9SYvqrrpwb4VgSZ69p30YaDo6khHxg4qgMFSMFN8tZ4hxxrXPOynQuyzySPw38dFeZS/oPIc/vLcd/7dnA7w8QhrIP/mvW",
+							"ELOQUA": "GUID=6806CA1C8538407792199DDE741E6988",
+							"FPID": "98edafd3-a5ea-4749-8b96-e73a725d8f48",
+							"kndctr_AD2A1C8B53308E600A490D4D_AdobeOrg_cluster": "or2",
+							"kndctr_AD2A1C8B53308E600A490D4D_AdobeOrg_identity": "CiY4MDU2NjI0MjYxOTczNTUzNDg4MjU1NTc0NTk4ODY0OTY5NDM2NlIQCP2g3-ndMhgBKgNPUjIwAqABiKHf6d0ysAED8AH9oN_p3TI=",
+							"OptanonConsent": "isGpcEnabled=0&datestamp=Fri+Mar+28+2025+09:47:42+GMT-0500+(Central+Daylight+Time)&version=202503.1.0&browserGpcFlag=0&isIABGlobal=false&hosts=&consentId=5c0dee84-8c3d-4245-bf66-6824f5533f34&interactionCount=1&isAnonUser=1&landingPath=NotLandingPage&groups=C0001:1,C0003:1,C0004:1,BG114:1,C0002:1,C0013:0,C0014:0&AwaitingReconsent=false",
+							"utag_main": "ad_blocker:0$wa_ecid:80566242619735534882555745988649694366"
+						},
+						"now": 1743173280060,
+						"qs": {}
+					}
+				},
+				"placeContext": {
+					"localTime": "2025-03-28T09:48:00.071-05:00",
+					"localTimezoneOffset": 300
+				},
+				"timestamp": "2025-03-28T14:48:00.071Z",
+				"web": {
+					"webInteraction": {
+						"linkClicks": {
+							"id": "linkClick",
+							"value": 1
+						},
+						"name": "linkClick",
+						"type": "other",
+						"URL": "https://www.intel.com/content/www/us/en/products/details/processors/core-ultra.html"
+					},
+					"webPageDetails": {
+						"isErrorPage": false,
+						"isHomePage": false,
+						"name": "/content/www/us/en/products/details/processors/core-ultra.html",
+						"server": "www.intel.com",
+						"siteSection": "intc",
+						"URL": "https://www.intel.com/content/www/us/en/products/details/processors/core-ultra.html"
+					},
+					"webReferrer": {
+						"URL": "https://www.intel.com/content/www/us/en/homepage.html"
+					}
+				}
+			}
+		}
+	],
+	"meta": {
+		"state": {
+			"cookiesEnabled": true,
+			"domain": "intel.com"
+		}
+	},
+	"query": {
+		"identity": {
+			"fetch": [
+				"ECID"
+			]
+		}
+	}
+}

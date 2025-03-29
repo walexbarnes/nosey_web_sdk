@@ -1,0 +1,453 @@
+// Background script for Adobe Web SDK Inspector
+
+// Global variable to track whether the extension is listening
+let isListening = false;
+let targetPaths = [];
+let requestCache = new Map(); // Cache to store request data temporarily
+let debugMode = false; // Disable extra debugging info by default 
+let requestCounter = 0; // Counter to track requests
+let devToolsConnections = new Set(); // Track active DevTools connections
+
+// Function to sanitize target paths - remove unwanted intel/experience paths
+function sanitizeTargetPaths(paths) {
+  if (!Array.isArray(paths)) {
+    return getDefaultPaths();
+  }
+
+  // List of bad path prefixes to filter out
+  const badPrefixes = [
+    '_experience.analytics',
+    '_intelcorp',
+    'meta.state',
+    'timestamp'
+  ];
+  
+  // Default good paths we always want
+  const defaultPaths = getDefaultPaths();
+  
+  // Filter out bad paths
+  const cleanPaths = paths.filter(path => 
+    !badPrefixes.some(prefix => path.includes(prefix))
+  );
+  
+  // Combine with defaults and deduplicate
+  const result = [...new Set([...defaultPaths, ...cleanPaths])];
+  
+  return result;
+}
+
+// Get the default target paths
+function getDefaultPaths() {
+  return [
+    'eventType',
+    'web.webPageDetails.URL',
+    'web.webInteraction.name',
+    'web.webInteraction.region'
+  ];
+}
+
+// On install or update, ensure the extension has the correct permissions
+chrome.runtime.onInstalled.addListener(() => {
+  // Reset paths to defaults on install/update
+  chrome.storage.local.set({ 
+    targetPaths: getDefaultPaths(),
+    extensionVersion: '1.0.4'  // Increment version number
+  });
+});
+
+// Initialize state from storage
+chrome.storage.local.get(['isListening', 'targetPaths', 'debugMode'], (result) => {
+  if (result.isListening !== undefined) {
+    isListening = result.isListening;
+  }
+  
+  if (result.debugMode !== undefined) {
+    debugMode = result.debugMode;
+  }
+  
+  // Always sanitize the paths when loading from storage
+  if (result.targetPaths && Array.isArray(result.targetPaths)) {
+    targetPaths = sanitizeTargetPaths(result.targetPaths);
+    // Save the sanitized paths back to storage
+    chrome.storage.local.set({ targetPaths });
+  } else {
+    // Use defaults if no paths in storage
+    targetPaths = getDefaultPaths();
+    chrome.storage.local.set({ targetPaths });
+  }
+});
+
+// Track connections from DevTools panels
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name === 'devtools-panel') {
+    devToolsConnections.add(port);
+    
+    // Clean up when DevTools disconnects
+    port.onDisconnect.addListener(() => {
+      devToolsConnections.delete(port);
+    });
+    
+    // Listen for messages from this DevTools panel
+    port.onMessage.addListener((message) => {
+      // Handle messages as needed
+    });
+  }
+});
+
+// Helper function to send messages to all connected DevTools panels
+function sendToDevTools(message) {
+  if (devToolsConnections.size === 0) {
+    try {
+      chrome.runtime.sendMessage(message).catch(() => {
+        // Expected error when no listeners
+      });
+    } catch (e) {
+      // Silently fail
+    }
+    return;
+  }
+  
+  // Send to all connected DevTools panels
+  for (const port of devToolsConnections) {
+    try {
+      port.postMessage(message);
+    } catch (e) {
+      // Remove bad connection
+      devToolsConnections.delete(port);
+    }
+  }
+}
+
+// Listen for messages from other extension components
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  try {
+    if (message.action === 'toggleListening') {
+      isListening = message.value;
+      chrome.storage.local.set({ isListening });
+      sendResponse({ status: 'success' });
+    } else if (message.action === 'updatePaths') {
+      // Sanitize paths before saving them
+      targetPaths = sanitizeTargetPaths(message.paths);
+      chrome.storage.local.set({ targetPaths });
+      sendResponse({ status: 'success', sanitizedPaths: targetPaths });
+    } else if (message.action === 'getStatus') {
+      // Always sanitize paths before sending them
+      targetPaths = sanitizeTargetPaths(targetPaths);
+      chrome.storage.local.set({ targetPaths }); // Save sanitized paths
+      
+      sendResponse({
+        isListening,
+        targetPaths,
+        debugMode
+      });
+    } else if (message.action === 'toggleDebug') {
+      debugMode = message.value;
+      chrome.storage.local.set({ debugMode });
+      sendResponse({ status: 'success' });
+    } else if (message.action === 'devtools-init') {
+      sendResponse({ status: 'success' });
+    }
+  } catch (error) {
+    sendResponse({ status: 'error', message: error.message });
+  }
+  
+  return true; // Indicate async response
+});
+
+// Function to get a deeply nested property using a path string
+const getNestedProperty = (obj, path) => {
+  const keys = path.split('.');
+  return keys.reduce((acc, key) => (acc && acc[key] !== undefined) ? acc[key] : undefined, obj);
+};
+
+// Function to check if a URL is an Adobe Web SDK URL
+function isAdobeWebSdkUrl(url) {
+  // ONLY process a request if it has BOTH configId AND requestId in query parameters
+  // AND has /ee/ in the request path
+  return url.includes('/ee/') && 
+         url.includes('configId=') && 
+         url.includes('requestId=');
+}
+
+// Function to determine request type (ping, fetch, etc.)
+function getRequestType(url, reqType, headers) {
+  // Check if it's a fetch request
+  if (reqType === 'fetch' || url.includes('fetch')) {
+    return 'fetch';
+  }
+  
+  // Default to the Chrome request type
+  return reqType;
+}
+
+// Helper function to safely parse JSON with fallback
+function safeParseJson(str) {
+  try {
+    return JSON.parse(str);
+  } catch (e) {
+    return null;
+  }
+}
+
+// Process the request data and send results
+function processRequestData(requestData, url, requestInfo = {}) {
+  try {
+    requestCounter++;
+    
+    const jsonData = safeParseJson(requestData);
+    if (!jsonData) {
+      return;
+    }
+    
+    // Standard processing for requests
+    if (jsonData.events && Array.isArray(jsonData.events)) {
+      const results = {};
+      let hasMatches = false;
+      
+      // Get the first event's XDM data
+      const event = jsonData.events[0];
+      const targetObject = event.xdm || event;
+      
+      // Add eventType as a standard field if not already specified in targetPaths
+      if (!targetPaths.includes('eventType') && targetObject.eventType) {
+        results['eventType'] = targetObject.eventType;
+        hasMatches = true;
+      }
+      
+      // Extract the specified target paths from the XDM
+      targetPaths.forEach(path => {
+        const value = getNestedProperty(targetObject, path);
+        if (value !== undefined) {
+          results[path] = value;
+          hasMatches = true;
+        }
+      });
+      
+      // If we found any matches, log them
+      if (hasMatches) {
+        // Send to content script to display
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+          if (tabs[0]?.id) {
+            try {
+              const completeRequestInfo = {
+                method: requestInfo.method,
+                type: requestInfo.type,
+                statusCode: requestInfo.statusCode,
+                response: requestInfo.response
+              };
+              
+              chrome.tabs.sendMessage(tabs[0].id, {
+                action: 'displayResults',
+                results,
+                url: url,
+                requestInfo: completeRequestInfo,
+                fullXdm: targetObject // Send the full XDM object
+              });
+            } catch (e) {
+              // Silently fail
+            }
+          }
+        });
+        
+        // Also send to any connected DevTools panels
+        try {
+          const completeRequestInfo = {
+            method: requestInfo.method,
+            type: requestInfo.type,
+            statusCode: requestInfo.statusCode,
+            response: requestInfo.response
+          };
+          
+          sendToDevTools({
+            action: 'displayResults',
+            results,
+            url: url,
+            requestInfo: completeRequestInfo,
+            fullXdm: targetObject // Send the full XDM object
+          });
+        } catch (e) {
+          // Silently fail
+        }
+      }
+    } else if (jsonData.meta || jsonData.requestId) {
+      // For requests that don't have events array but might have metadata
+      const results = {};
+      let hasMatches = false;
+      
+      // Try to find matches in top-level objects
+      targetPaths.forEach(path => {
+        const value = getNestedProperty(jsonData, path);
+        if (value !== undefined) {
+          results[path] = value;
+          hasMatches = true;
+        }
+      });
+      
+      if (hasMatches) {
+        // Send results to content script and DevTools panel
+        try {
+          chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs[0]?.id) {
+              chrome.tabs.sendMessage(tabs[0].id, {
+                action: 'displayResults',
+                results,
+                url: url,
+                requestInfo: {
+                  method: requestInfo.method,
+                  type: requestInfo.type,
+                  statusCode: requestInfo.statusCode
+                },
+                fullXdm: jsonData // Pass the full object
+              });
+            }
+          });
+          
+          sendToDevTools({
+            action: 'displayResults',
+            results,
+            url: url,
+            requestInfo: {
+              method: requestInfo.method,
+              type: requestInfo.type,
+              statusCode: requestInfo.statusCode
+            },
+            fullXdm: jsonData // Pass the full object
+          });
+        } catch (e) {
+          // Silently fail
+        }
+      }
+    }
+  } catch (error) {
+    // Silently fail
+  }
+}
+
+// Listen for request headers being sent
+chrome.webRequest.onBeforeSendHeaders.addListener(
+  (details) => {
+    if (!isListening) {
+      return { cancel: false };
+    }
+    
+    // Check if this looks like an Adobe Web SDK request
+    const isAdobeRequest = isAdobeWebSdkUrl(details.url);
+    
+    // Determine the request type
+    const requestType = getRequestType(details.url, details.type, details.requestHeaders);
+    
+    // Early return if not an Adobe request
+    if (!isAdobeRequest) {
+      return { cancel: false };
+    }
+  },
+  { urls: ["<all_urls>"] }
+);
+
+// Listen for request data being sent
+chrome.webRequest.onSendHeaders.addListener(
+  (details) => {
+    if (!isListening) {
+      return { cancel: false };
+    }
+    
+    // Check if this looks like an Adobe Web SDK request
+    const isAdobeRequest = isAdobeWebSdkUrl(details.url);
+    
+    // Early return if not an Adobe request
+    if (!isAdobeRequest) {
+      return { cancel: false };
+    }
+    
+    // Store request in cache
+    requestCache.set(details.requestId, {
+      url: details.url,
+      method: details.method,
+      type: details.type,
+      timestamp: Date.now()
+    });
+  },
+  { urls: ["<all_urls>"] }
+);
+
+// Capture request data for processing
+chrome.webRequest.onBeforeRequest.addListener(
+  (details) => {
+    if (!isListening) {
+      return { cancel: false };
+    }
+    
+    // Check if this looks like an Adobe Web SDK request
+    const isAdobeRequest = isAdobeWebSdkUrl(details.url);
+    
+    // Early return if not an Adobe request
+    if (!isAdobeRequest) {
+      return { cancel: false };
+    }
+    
+    // Only process POST requests with request bodies
+    if (details.method === 'POST' && details.requestBody) {
+      const requestData = details.requestBody.raw ? 
+        decodeURIComponent(String.fromCharCode.apply(null, new Uint8Array(details.requestBody.raw[0].bytes))) : 
+        '';
+      
+      if (requestData) {
+        // Get cached request info
+        const requestInfo = requestCache.get(details.requestId) || { 
+          url: details.url,
+          method: details.method,
+          type: details.type
+        };
+        
+        // Process the data
+        processRequestData(requestData, details.url, requestInfo);
+      }
+    }
+  },
+  { urls: ["<all_urls>"] },
+  ["requestBody"]
+);
+
+// Capture response data
+chrome.webRequest.onHeadersReceived.addListener(
+  (details) => {
+    if (!isListening) {
+      return { cancel: false };
+    }
+    
+    // Check if this looks like an Adobe Web SDK request
+    const isAdobeRequest = isAdobeWebSdkUrl(details.url);
+    
+    // Early return if not an Adobe request
+    if (!isAdobeRequest) {
+      return { cancel: false };
+    }
+    
+    // Update cached request with status code
+    const requestInfo = requestCache.get(details.requestId);
+    if (requestInfo) {
+      requestInfo.statusCode = details.statusCode;
+      requestCache.set(details.requestId, requestInfo);
+    }
+  },
+  { urls: ["<all_urls>"] },
+  ["responseHeaders"]
+);
+
+// Clean up request cache periodically
+setInterval(() => {
+  const now = Date.now();
+  const expiredRequests = [];
+  
+  // Find expired requests (older than 5 minutes)
+  requestCache.forEach((requestInfo, requestId) => {
+    if (now - requestInfo.timestamp > 5 * 60 * 1000) {
+      expiredRequests.push(requestId);
+    }
+  });
+  
+  // Remove expired requests
+  expiredRequests.forEach(requestId => {
+    requestCache.delete(requestId);
+  });
+}, 60 * 1000); // Run every minute 
