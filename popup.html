@@ -7,6 +7,8 @@
       width: 400px;
       font-family: Arial, sans-serif;
       margin: 16px;
+      position: relative;
+      padding-bottom: 30px; /* Make room for the credit line */
     }
     
     .header {
@@ -74,6 +76,24 @@
       background-color: #f5f5f5;
       font-size: 14px;
     }
+    
+    .credit {
+      position: absolute;
+      bottom: 8px;
+      right: 8px;
+      font-size: 10px;
+      color: #777;
+      text-align: right;
+    }
+    
+    .credit a {
+      color: #2196F3;
+      text-decoration: none;
+    }
+    
+    .credit a:hover {
+      text-decoration: underline;
+    }
   </style>
   <script src="analytics.js"></script>
 </head>
@@ -94,6 +114,10 @@
   <button id="saveButton" class="save-button">Save Paths</button>
   
   <div id="status" class="status">Ready to use</div>
+  
+  <div class="credit">
+    Developed by <a href="https://www.linkedin.com/in/williamalexbarnes" target="_blank">Alex Barnes</a>
+  </div>
   
   <script src="popup.js"></script>
 </body>
